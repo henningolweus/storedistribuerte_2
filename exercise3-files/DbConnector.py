@@ -13,10 +13,10 @@ class DbConnector:
     """
 
     def __init__(self,
-                 DATABASE='DATABASE_NAME',
-                 HOST="tdt4225-xx.idi.ntnu.no",
-                 USER="TEST_USER",
-                 PASSWORD="test123"):
+                 DATABASE='strava_db',
+                 HOST="tdt4225-16.idi.ntnu.no",
+                 USER="henningergraadig",
+                 PASSWORD="14.8kr"):
         uri = "mongodb://%s:%s@%s/%s" % (USER, PASSWORD, HOST, DATABASE)
         # Connect to the databases
         try:
