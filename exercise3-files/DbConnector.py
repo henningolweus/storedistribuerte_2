@@ -15,7 +15,7 @@ class DbConnector:
     def __init__(self,
                  DATABASE='strava_db',
                  HOST="tdt4225-16.idi.ntnu.no",
-                 USER="henningergraadig",
+                 USER="strava_user",
                  PASSWORD="14.8kr"):
         uri = "mongodb://%s:%s@%s/%s" % (USER, PASSWORD, HOST, DATABASE)
         # Connect to the databases
