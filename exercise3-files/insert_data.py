@@ -18,29 +18,25 @@ def parse_trackpoint_data(file_path):
             data = line.strip().split(',')
             latitude = float(data[0])
             longitude = float(data[1])
-            altitude = int(data[3])
+            altitude = int(round(float(data[3])))
             
             # Validate latitude, longitude, and altitude
             if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180) or altitude == -777:
                 continue
+            
+            # Convert the date and time to the required format (YYYY-MM-DD HH:MM:SS)
+            date_str = f"{data[5]} {data[6]}"
+            date_time = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
             
             trackpoint = {
                 "lat": latitude,
                 "lon": longitude,
                 "altitude": altitude,
                 "date_days": float(data[4]),
-                "date_time": datetime.strptime(f"{data[5]} {data[6]}", "%Y-%m-%d %H:%M:%S")
+                "date_time": date_time  # Store as a datetime object
             }
             trackpoints.append(trackpoint)
     return trackpoints
-
-def is_activity_invalid(trackpoints):
-    # An activity is invalid if any consecutive trackpoints have timestamps deviating by 5 minutes or more
-    for i in range(1, len(trackpoints)):
-        time_diff = trackpoints[i]['date_time'] - trackpoints[i - 1]['date_time']
-        if time_diff >= timedelta(minutes=5):
-            return True
-    return False
 
 def match_transportation_mode(user_id, start_time, end_time):
     # Read labels.txt file for each labeled user and match exact start and end time
@@ -56,28 +52,51 @@ def match_transportation_mode(user_id, start_time, end_time):
             label_end = datetime.strptime(data[1], "%Y/%m/%d %H:%M:%S")
             mode = data[2]
             
+            # Ensure the dates are in the format YYYY-MM-DD HH:MM:SS
+            label_start = label_start.strftime("%Y-%m-%d %H:%M:%S")
+            label_end = label_end.strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Convert back to datetime objects for comparison
+            label_start = datetime.strptime(label_start, "%Y-%m-%d %H:%M:%S")
+            label_end = datetime.strptime(label_end, "%Y-%m-%d %H:%M:%S")
+            
             if label_start == start_time and label_end == end_time:
                 return mode
     return None
 
-def insert_data(db, dataset_path):
+def insert_data(db, dataset_path, labeled_users, continue_from_user, continue_from_activity):
     user_collection, activity_collection, trackpoint_collection = create_collections(db)
     
     # Iterate through the users in the dataset directory
-    for user_id in os.listdir(dataset_path):
+    total_users = len(os.listdir(dataset_path))
+    for user_index, user_id in enumerate(os.listdir(dataset_path), start=1):
+        if int(user_id) < int(continue_from_user):
+            print(f"Continuing from memory, skipping user: {user_id}")
+            continue
+
         user_dir = os.path.join(dataset_path, user_id, 'Trajectory')
         if not os.path.isdir(user_dir):
             continue
         
-        # Insert user into the User collection
-        user_doc = {
-            "_id": user_id,
-            "has_labels": user_id in labeled_users  # labeled_users is a set of IDs with labels
-        }
-        user_collection.insert_one(user_doc)
+        print(f"Processing user {user_index}/{total_users}: {user_id}")
+
+        if user_collection.find_one({"_id": user_id}):
+            print(f"User {user_id} already exists. Skipping insertion.")
+        else:
+            # Insert user into the User collection
+            user_doc = {
+                "_id": user_id,
+                "has_labels": user_id in labeled_users  # labeled_users is a set of IDs with labels
+            }
+            user_collection.insert_one(user_doc)
         
         # Iterate through each activity file for the user
-        for file_name in os.listdir(user_dir):
+        activity_files = os.listdir(user_dir)
+        total_activities = len(activity_files)
+        for activity_index, file_name in enumerate(activity_files, start=1):
+            if int(user_id) == int(continue_from_user) and int(continue_from_activity)>int(activity_index):
+                print(f"Continuing from memory, skipping activity:{activity_index}")
+                continue
             file_path = os.path.join(user_dir, file_name)
             trackpoints = parse_trackpoint_data(file_path)
             
@@ -85,14 +104,23 @@ def insert_data(db, dataset_path):
             if len(trackpoints) > 2500:
                 continue
             
-            # Check if the activity is invalid based on time deviations
-            if is_activity_invalid(trackpoints):
-                print(f"Skipping invalid activity in {file_path}")
+            # Check if trackpoints is not empty
+            if not trackpoints:
+                print(f"Skipping activity {activity_index} for user {user_id}: No valid trackpoints found.")
                 continue
-            
+
+            print(f"  Processing activity {activity_index}/{total_activities} for user {user_id}")
+
             # Match transportation mode if available
             start_time = trackpoints[0]['date_time']
             end_time = trackpoints[-1]['date_time']
+            
+            # Convert the start and end times to the required format
+            start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+            end_time_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+            start_time = datetime.strptime(start_time_str, "%Y-%m-%d %H:%M:%S")
+            end_time = datetime.strptime(end_time_str, "%Y-%m-%d %H:%M:%S")
+            
             transportation_mode = match_transportation_mode(user_id, start_time, end_time)
             
             # Insert the activity
@@ -109,16 +137,21 @@ def insert_data(db, dataset_path):
                 tp["activity_id"] = activity_id
             trackpoint_collection.insert_many(trackpoints)
 
+        print(f"Finished processing user {user_id}.\n")
+
 def main():
+
+    continue_from_user = "011"
+    continue_from_activity = 1 #1-indexed
     db = DbConnector().db
-    dataset_path = "/path/to/your/dataset"  # Update this path
-    labeled_users_path = "/path/to/labeled_ids.txt"  # Update this path
+    dataset_path = "../dataset/dataset/Data"  # Update this path
+    labeled_users_path = "../dataset/dataset/labeled_ids.txt"  # Update this path
 
     # Read labeled user IDs
     with open(labeled_users_path, 'r') as f:
-        labeled_users = set(line.strip() for line in f)
+        labeled_users = {line.strip() for line in f}
 
-    insert_data(db, dataset_path)
+    insert_data(db, dataset_path, labeled_users, continue_from_user, continue_from_activity)
 
 if __name__ == "__main__":
     main()
