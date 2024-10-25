@@ -18,14 +18,27 @@ def task1():
     print(f"Number of Trackpoints: {num_trackpoints}")
 
 # Task 2: Find the average number of activities per user
+#def task2():
+#    pipeline = [
+#        {"$group": {"_id": "$user_id", "activity_count": {"$sum": 1}}},
+#        {"$group": {"_id": None, "avg_activities_per_user": {"$avg": "$activity_count"}}}
+#    ]
+#    result = list(db.Activity.aggregate(pipeline))
+#    avg_activities = result[0]["avg_activities_per_user"] if result else "No data available"
+#    print(f"Average Activities per User: {avg_activities:.2f}") 
+    
+# Task 2: Find the average number of activities per user (including those with zero activities)
 def task2():
-    pipeline = [
-        {"$group": {"_id": "$user_id", "activity_count": {"$sum": 1}}},
-        {"$group": {"_id": None, "avg_activities_per_user": {"$avg": "$activity_count"}}}
-    ]
-    result = list(db.Activity.aggregate(pipeline))
-    avg_activities = result[0]["avg_activities_per_user"] if result else "No data available"
+    # Total number of users (including those without activities)
+    total_users = db.User.count_documents({})
+
+    # Total number of activities
+    total_activities = db.Activity.count_documents({})
+
+    # Calculate the average
+    avg_activities = total_activities / total_users if total_users > 0 else 0
     print(f"Average Activities per User: {avg_activities:.2f}")
+
 
 # Task 3: Find the top 20 users with the highest number of activities
 def task3():
@@ -452,17 +465,17 @@ def view_user_summary(user_id):
 
 def main():
     #view_user_summary("068")
-    #print("\nTask 1:")
-    #print("-" * 50)
-    #task1()
-    #
-    #print("\nTask 2:")
-    #print("-" * 50)
-    #task2()
-    #
-    #print("\nTask 3:")
-    #print("-" * 50)
-    #task3()
+    print("\nTask 1:")
+    print("-" * 50)
+    task1()
+    
+    print("\nTask 2:")
+    print("-" * 50)
+    task2()
+    
+    print("\nTask 3:")
+    print("-" * 50)
+    task3()
     #print("\nTask 4:")
     #task4()
     #print("\nTask 5:")
@@ -479,8 +492,8 @@ def main():
     #task9()
     #print("\nTask 10:")
     #task10()
-    print("\nTask 11:")
-    task11()
+    #print("\nTask 11:")
+    #task11()
     print("\n ----------------------------------------------- \n")
 
 
