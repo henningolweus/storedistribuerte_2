@@ -20,48 +20,35 @@ def task9():
         }}
     ]
     
-    trackpoints_by_activity = defaultdict(list)
-    for tp in trackpoints_collection.aggregate(pipeline):
-        trackpoints_by_activity[tp["_id"]] = tp["trackpoints"]
+    trackpoints_by_activity = {tp["_id"]: tp["trackpoints"] for tp in trackpoints_collection.aggregate(pipeline)}
 
     # Initialize a dictionary to store the count of invalid activities per user
-    invalid_activity_counts = {}
+    invalid_activity_counts = defaultdict(int)
 
-    # Iterate through each activity
     for activity in activities:
-        activity_id = activity["_id"]
-        activity_trackpoints = trackpoints_by_activity.get(activity_id, [])
-        
-        if not activity_trackpoints:
-            continue
+        # Fetch associated trackpoints for the current activity
+        trackpoints = trackpoints_by_activity.get(activity['_id'], [])
+        is_invalid = False  # Assume activity is valid initially
 
-        # Initialize a flag to check for invalid activity
-        is_invalid = False
+        # Sort trackpoints by time if not already sorted
+        trackpoints.sort()
 
-        # Sort trackpoints by date_time
-        activity_trackpoints.sort()  # Sort directly, since they are date_time objects
-        
-        # Check for invalid activities with consecutive trackpoints
-        for i in range(1, len(activity_trackpoints)):
-            prev_time = activity_trackpoints[i - 1]
-            curr_time = activity_trackpoints[i]
-            time_diff = (curr_time - prev_time).total_seconds()
+        # Check time differences
+        for i in range(len(trackpoints) - 1):
+            time_diff = (trackpoints[i + 1] - trackpoints[i]).total_seconds()
+            
             if time_diff >= 300:  # 5 minutes
                 is_invalid = True
-                break
-        
-        # If the activity is invalid, increment the count for the user
+                break  # Exit loop as we already found an invalid condition
+
+        # Count invalid activity
         if is_invalid:
-            user_id = activity["user_id"]
-            invalid_activity_counts[user_id] = invalid_activity_counts.get(user_id, 0) + 1
+            invalid_activity_counts[activity['user_id']] += 1
 
     # Print the results
     if invalid_activity_counts:
-        print("Invalid activities by user:")
         for user_id, count in invalid_activity_counts.items():
             print(f"User ID: {user_id}, Invalid Activities: {count}")
-    else:
-        print("No invalid activities found.")
 
 if __name__ == "__main__":
     task9()
