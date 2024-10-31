@@ -3,6 +3,7 @@ from pprint import pprint
 from datetime import timedelta, datetime
 from haversine import haversine, Unit
 from DbConnector import DbConnector
+from collections import defaultdict
 
 # Connect to the database
 db_connector = DbConnector()
@@ -263,122 +264,101 @@ def task8():
 
 # Find users who have invalid activities
 def task9():
+    # Create an instance of DbConnector to access the database
+    db_connector = DbConnector()
+    activities_collection = db_connector.db['Activity']  # Accessing the activities collection
+    trackpoints_collection = db_connector.db['TrackPoint']  # Accessing the trackpoints collection
+
+    # Get all activities from the database
+    activities = list(activities_collection.find())
+    
+    # Fetch all trackpoints and group them by activity ID
     pipeline = [
-        {
-            "$lookup": {
-                "from": "TrackPoint",
-                "localField": "_id",
-                "foreignField": "activity_id",
-                "as": "trackpoints"
-            }
-        },
-        {
-            "$project": {
-                "user_id": 1,
-                "trackpoints": {
-                    "$filter": {
-                        "input": "$trackpoints",
-                        "as": "tp",
-                        "cond": {
-                            "$ne": ["$$tp.date_time", None]
-                        }
-                    }
-                }
-            }
-        },
-        {
-            "$unwind": "$trackpoints"
-        },
-        {
-            "$sort": {
-                "trackpoints.activity_id": 1,
-                "trackpoints.date_time": 1
-            }
-        },
-        {
-            "$group": {
-                "_id": {
-                    "user_id": "$user_id",
-                    "activity_id": "$_id"
-                },
-                "trackpoints": {
-                    "$push": "$trackpoints.date_time"
-                }
-            }
-        },
-        {
-            "$project": {
-                "user_id": "$_id.user_id",
-                "activity_id": "$_id.activity_id",
-                "invalid": {
-                    "$gt": [
-                        {
-                            "$size": {
-                                "$filter": {
-                                    "input": {
-                                        "$map": {
-                                            "input": {"$range": [1, {"$size": "$trackpoints"}]},
-                                            "as": "idx",
-                                            "in": {
-                                                "$divide": [
-                                                    {
-                                                        "$subtract": [
-                                                            {"$arrayElemAt": ["$trackpoints", "$$idx"]},
-                                                            {"$arrayElemAt": ["$trackpoints", {"$subtract": ["$$idx", 1]}]}
-                                                        ]
-                                                    },
-                                                    60000  # Convert milliseconds to minutes
-                                                ]
-                                            }
-                                        }
-                                    },
-                                    "as": "time_diff",
-                                    "cond": {"$gte": ["$$time_diff", 5]}
-                                }
-                            }
-                        },
-                        0
-                    ]
-                }
-            }
-        },
-        {
-            "$match": {
-                "invalid": True
-            }
-        },
-        {
-            "$group": {
-                "_id": "$user_id",
-                "invalid_activities_count": {"$sum": 1}
-            }
-        }
+        {"$group": {
+            "_id": "$activity_id",
+            "trackpoints": {"$push": "$date_time"}
+        }}
     ]
+    
+    trackpoints_by_activity = {tp["_id"]: tp["trackpoints"] for tp in trackpoints_collection.aggregate(pipeline)}
 
-    result = list(db.Activity.aggregate(pipeline, allowDiskUse=True))
-    pprint(result)
+    # Initialize a dictionary to store the count of invalid activities per user
+    invalid_activity_counts = defaultdict(int)
 
+    for activity in activities:
+        # Fetch associated trackpoints for the current activity
+        trackpoints = trackpoints_by_activity.get(activity['_id'], [])
+        is_invalid = False  # Assume activity is valid initially
+
+        # Sort trackpoints by time if not already sorted
+        trackpoints.sort()
+
+        # Check time differences
+        for i in range(len(trackpoints) - 1):
+            time_diff = (trackpoints[i + 1] - trackpoints[i]).total_seconds()
+            
+            if time_diff >= 300:  # 5 minutes
+                is_invalid = True
+                break  # Exit loop as we already found an invalid condition
+
+        # Count invalid activity
+        if is_invalid:
+            invalid_activity_counts[activity['user_id']] += 1
+
+    # Print the results
+    if invalid_activity_counts:
+        for user_id, count in invalid_activity_counts.items():
+            print(f"User ID: {user_id}, Invalid Activities: {count}")
 
 
 # Task 10: Find users who have tracked an activity in the Forbidden City
 def task10():
-    forbidden_lat = 39.916
-    forbidden_lon = 116.397
-    tolerance = 0.001
-    users_in_forbidden_city = set()
+    forbidden_city_coords = (39.916, 116.397)
+    forbidden_radius_deg = 0.001  # Approximation for 0.1 km tolerance
 
-    activities = db.Activity.find({}, {"_id": 1, "user_id": 1})
-    for activity in activities:
-        trackpoints = db.TrackPoint.find(
-            {"activity_id": activity["_id"], 
-             "lat": {"$gte": forbidden_lat - tolerance, "$lte": forbidden_lat + tolerance},
-             "lon": {"$gte": forbidden_lon - tolerance, "$lte": forbidden_lon + tolerance}}
-        )
-        if trackpoints.count() > 0:
-            users_in_forbidden_city.add(activity["user_id"])
+    # Initialize the database connection
+    db_connector = DbConnector()
+    db = db_connector.db
 
-    pprint(list(users_in_forbidden_city))
+    # Ensure an index on TrackPoint coordinates for faster querying
+    db.TrackPoint.create_index([("lat", 1), ("lon", 1)])  # Ascending index on lat and lon
 
+    # First filter TrackPoints close to the Forbidden City, then join
+    pipeline = [
+        {
+            "$match": {
+                "lat": {"$gte": forbidden_city_coords[0] - forbidden_radius_deg,
+                        "$lte": forbidden_city_coords[0] + forbidden_radius_deg},
+                "lon": {"$gte": forbidden_city_coords[1] - forbidden_radius_deg,
+                        "$lte": forbidden_city_coords[1] + forbidden_radius_deg}
+            }
+        },
+        {
+            "$lookup": {
+                "from": "Activity",  # Assuming the collection is named "Activity"
+                "localField": "activity_id",
+                "foreignField": "_id",
+                "as": "activity"
+            }
+        },
+        {
+            "$unwind": "$activity"  # Unwind only if activity exists
+        },
+        {
+            "$group": {"_id": "$activity.user_id"}  # Group by unique user IDs
+        }
+    ]
+
+    # Execute the aggregation pipeline
+    result = list(db.TrackPoint.aggregate(pipeline))
+    
+    # Print the user IDs with activities in the Forbidden City area
+    print("Users with Activities in the Forbidden City:")
+    user_ids = [str(user["_id"]) for user in result]
+    if user_ids:
+        print(f"User IDs: {', '.join(user_ids)}")
+    else:
+        print("No users found with activities in the Forbidden City area.")
 
 # Task 11: Find all users with registered transportation_mode and their most used transportation_mode
 #def task11():
@@ -476,24 +456,24 @@ def main():
     print("\nTask 3:")
     print("-" * 50)
     task3()
-    #print("\nTask 4:")
-    #task4()
-    #print("\nTask 5:")
-    #task5()
-    #print("\nTask 6a:")
-    #task6a()
-    #print("\nTask 6b:")
-    #task6b()
-    #print("\nTask 7:")
-    #task7()
-    #print("Task 8:")
-    #task8()
-    #print("\nTask 9:")
-    #task9()
-    #print("\nTask 10:")
-    #task10()
-    #print("\nTask 11:")
-    #task11()
+    print("\nTask 4:")
+    task4()
+    print("\nTask 5:")
+    task5()
+    print("\nTask 6a:")
+    task6a()
+    print("\nTask 6b:")
+    task6b()
+    print("\nTask 7:")
+    task7()
+    print("Task 8:")
+    task8()
+    print("\nTask 9:")
+    task9()
+    print("\nTask 10:")
+    task10()
+    print("\nTask 11:")
+    task11()
     print("\n ----------------------------------------------- \n")
 
 
