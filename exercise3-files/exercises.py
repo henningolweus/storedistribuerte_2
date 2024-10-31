@@ -5,6 +5,8 @@ from haversine import haversine, Unit
 from DbConnector import DbConnector
 from collections import defaultdict
 
+#Code has been structured using OpenAI ChatGPT 4.0
+
 # Connect to the database
 db_connector = DbConnector()
 db = db_connector.db
@@ -18,16 +20,7 @@ def task1():
     print(f"Number of Activities: {num_activities}")
     print(f"Number of Trackpoints: {num_trackpoints}")
 
-# Task 2: Find the average number of activities per user
-#def task2():
-#    pipeline = [
-#        {"$group": {"_id": "$user_id", "activity_count": {"$sum": 1}}},
-#        {"$group": {"_id": None, "avg_activities_per_user": {"$avg": "$activity_count"}}}
-#    ]
-#    result = list(db.Activity.aggregate(pipeline))
-#    avg_activities = result[0]["avg_activities_per_user"] if result else "No data available"
-#    print(f"Average Activities per User: {avg_activities:.2f}") 
-    
+
 # Task 2: Find the average number of activities per user (including those with zero activities)
 def task2():
     # Total number of users (including those without activities)
@@ -144,64 +137,6 @@ def task7():
 
     pprint(f'Total distance (km): {total_distance}')
 
-
-
-#def task8():
-#    user_altitude_gain = {}
-#
-#    # Step 1: Fetch all activities with their user_ids in a single query
-#    activities = list(db.Activity.find({}, {"_id": 1, "user_id": 1}))
-#
-#    # Create a dictionary to map activity IDs to user IDs for quick lookup
-#    activity_user_map = {activity["_id"]: activity["user_id"] for activity in activities}
-#
-#    # Step 2: Fetch all trackpoints sorted by activity_id and date_time
-#    trackpoints = db.TrackPoint.find({}, {"activity_id": 1, "altitude": 1, "date_time": 1}).sort([("activity_id", 1), ("date_time", 1)])
-#
-#    # Initialize tracking variables
-#    current_activity_id = None
-#    previous_altitude = None
-#    total_gain = 0
-#    user_id = None
-#
-#    # Process trackpoints
-#    for tp in trackpoints:
-#        activity_id = tp["activity_id"]
-#        altitude = tp["altitude"]
-#
-#        # Filter altitudes to ensure they are within the valid range
-#        if altitude < -1292 or altitude > 45000:
-#            continue
-#
-#        # If the activity changes, record the total gain for the previous activity's user
-#        if activity_id != current_activity_id:
-#            if current_activity_id is not None and total_gain > 0 and user_id is not None:
-#                user_altitude_gain[user_id] = user_altitude_gain.get(user_id, 0) + total_gain
-#
-#            # Update variables for the new activity
-#            current_activity_id = activity_id
-#            previous_altitude = altitude
-#            total_gain = 0
-#            user_id = activity_user_map.get(activity_id)
-#
-#        else:
-#            # Calculate altitude gain if the current altitude is higher than the previous one
-#            if previous_altitude is not None and altitude > previous_altitude:
-#                altitude_diff = altitude - previous_altitude
-#                # Only include altitude gain if the difference is less than 3000
-#                if altitude_diff < 3000:
-#                    total_gain += altitude_diff
-#            
-#            previous_altitude = altitude
-#
-#    # Account for the last activity processed
-#    if current_activity_id is not None and total_gain > 0 and user_id is not None:
-#        user_altitude_gain[user_id] = user_altitude_gain.get(user_id, 0) + total_gain
-#
-#    # Sort and get the top 20 users
-#    top_20_users = sorted(user_altitude_gain.items(), key=lambda x: x[1], reverse=True)[:20]
-#    pprint([{"user_id": user_id, "total_altitude_gain_meters": str(int(gain)*0.3048,0)} for user_id, gain in top_20_users])
-    
 
 # Task 8: Find the top 20 users who have gained the most altitude meters
 def task8():
@@ -359,26 +294,6 @@ def task10():
         print(f"User IDs: {', '.join(user_ids)}")
     else:
         print("No users found with activities in the Forbidden City area.")
-
-# Task 11: Find all users with registered transportation_mode and their most used transportation_mode
-#def task11():
-#    pipeline = [
-#        {"$match": {"transportation_mode": {"$ne": None}}},
-#        {"$group": {
-#            "_id": {"user_id": "$user_id", "mode": "$transportation_mode"},
-#            "mode_count": {"$sum": 1}
-#        }},
-#        {"$sort": {"_id.user_id": 1, "mode_count": -1}},
-#        {"$group": {
-#            "_id": "$_id.user_id",
-#            "most_used_mode": {"$first": "$_id.mode"}
-#        }},
-#        {"$sort": {"_id": 1}}
-#    ]
-#    result = list(db.Activity.aggregate(pipeline))
-#    for item in result:
-#        print(f"User ID: {item['_id']} | Mode: {item['most_used_mode']}")
-#
 
 
 # Task 11: Find all users with registered transportation_mode and their most used transportation_mode, handling ties

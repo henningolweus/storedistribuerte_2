@@ -2,6 +2,8 @@ import os
 from datetime import datetime, timedelta
 from DbConnector import DbConnector
 
+#Code has been structured using OpenAI ChatGPT 4.0
+
 def create_collections(db):
     # Create collections if they do not exist
     user_collection = db["User"]
